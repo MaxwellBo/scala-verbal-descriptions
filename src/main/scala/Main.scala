@@ -1,7 +1,7 @@
 import scala.meta._
 import java.io.File
 import scopt.OptionParser
-import scala.io.Source
+import scala.io.{Source => FileSource}
 
 object Location {
   val START_OF_FILE = Location(0, 0)
@@ -11,7 +11,7 @@ final case class Location(
   line: Int,
   character: Int
 ) {
-  def lineStart = this.copy(character = 0)
+  def lineStart: Location = this.copy(character = 0)
 }
 
 final class LocationRange(
@@ -32,7 +32,7 @@ object Preference extends Enumeration {
 
 final case class Config(
   input: File = new File("."),
-  mode: Mode.Value = Mode.Summarise,
+  mode: Mode.Value = Mode.Describe,
   prefer: Preference.Value = Preference.Types,
   target: Either[Location, LocationRange] = Left(Location(0, 0)),
   layers: Int = 3
@@ -40,7 +40,7 @@ final case class Config(
 
 object Main extends App {
   // For development
-  go()(Config().copy(input = new File("./src/main/scala/Main.scala")))
+  go()(Config().copy(input = new File("./Syntax")))
 
   def parseArgs(): Option[Config] = {
     val NAME = "scala-verbal-descriptions"
@@ -57,13 +57,50 @@ object Main extends App {
   }
 
   def go()(implicit cfg: Config): Unit = {
-    val file = Source.fromFile(cfg.input)
+    val file = FileSource.fromFile(cfg.input)
 
     println(interpret(file.mkString))
   }
 
   def interpret(xs: String)(implicit cfg: Config): String = {
-    "interpretation"
+    cfg.mode match {
+      case Mode.Describe => describe(xs)
+      case Mode.Summarise => summarise(xs)
+      case Mode.Breadcrumb => breadcrumb(xs)
+    }
+  }
+
+  def visitList(xs: List[Tree]): String = {
+    xs.map(visit).mkString(", ")
+  }
+
+  def visit(tree: Tree): String = {
+    tree match {
+      case _import: Import => "An import"
+      case typeName: Type.Name => typeName.value
+      case typeApply: Type.Apply => visitList(typeApply.args)
+      case x => f"[HALT] ${x.productPrefix}"
+    }
+  }
+
+  def recursiveExplore(stats: List[Tree])(level: Int): Unit = {
+    println(stats.map(visit).mkString("\n"))
+  }
+
+  def describe(xs: String)(implicit cfg: Config): String = {
+    val tree = xs.parse[Source].get.stats
+
+    recursiveExplore(tree)(0)
+
+    ""
+  }
+
+  def summarise(xs: String)(implicit cfg: Config): String = {
+    ""
+  }
+
+  def breadcrumb(xs: String)(implicit cfg: Config): String = {
+    ""
   }
 }
 
