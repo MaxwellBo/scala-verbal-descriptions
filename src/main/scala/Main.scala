@@ -39,8 +39,13 @@ final case class Config(
 )
 
 object Main extends App {
+
+  implicit class TreeOps(self: Tree) {
+    def visitTree = visit(self)
+  }
+
   // For development
-  go()(Config().copy(input = new File("./Syntax")))
+  go()(Config().copy(input = new File("./examples/issue.scala")))
 
   def parseArgs(): Option[Config] = {
     val NAME = "scala-verbal-descriptions"
@@ -76,9 +81,17 @@ object Main extends App {
 
   def visit(tree: Tree): String = {
     tree match {
-      case _import: Import => "An import"
-      case typeName: Type.Name => typeName.value
-      case typeApply: Type.Apply => visitList(typeApply.args)
+      case _import: Import =>
+        "An import"
+      case typeName: Type.Name =>
+        s"typeName.value"
+      case typeApply: Type.Apply =>
+        visitList(typeApply.args)
+      case defnObject: Defn.Object =>
+        f"Object definition ${visit(defnObject.name)} with children ${visitList(defnObject.children)}"
+      case termName: Term.Name =>
+        termName.value
+
       case x => f"[HALT] ${x.productPrefix}"
     }
   }
