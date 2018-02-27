@@ -117,10 +117,6 @@ object Main extends App {
     }
   }
 
-  def visitParamss(xss: List[List[Term.Param]]) = {
-    xss.flatten.visit
-  }
-
   def visitTree(tree: Tree): String = {
     tree match {
       case _import: Import =>{
@@ -214,9 +210,9 @@ object Main extends App {
       case ctorPrimary: Ctor.Primary => {
         val mods = ctorPrimary.mods.visit
         val name = ctorPrimary.name.visit
-        val paramss = ctorPrimary.paramss
+        val paramss = ctorPrimary.paramss.flatten.visitFormatNonEmpty(x => f"contains $x")
 
-        s"$mods $name contains ${visitParamss(paramss)}"
+        s"$mods $name $paramss"
       }
 
       case defnDef: Defn.Def => {
