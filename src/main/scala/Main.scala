@@ -41,7 +41,7 @@ final case class Config(
 object Main extends App {
 
   implicit class StringOps(self: String) {
-    def quote = self // TODO
+    def quote = f"\'$self\'"
   }
 
   implicit class TreeOps(self: Tree) {
@@ -49,16 +49,28 @@ object Main extends App {
   }
 
   implicit class ListOps(self: List[Tree]) {
-    private def formatList[A](xs: List[A]): String = {
+    private def formatList[A](sep: String)(xs: List[A]): String = {
       if (xs.length <= 1) {
-        xs.mkString(", ") // empty lists are going to produce empty strings
+        xs.mkString(sep) // empty lists are going to produce empty strings
       } else {
-        xs.init.mkString(", ") + " and " + xs.last // safe
+        xs.init.mkString(sep) + sep + " and " + xs.last // safe
+      }
+    }
+
+    def suffix: String = {
+      self.length match {
+        case 0 => "s"
+        case 1 => ": "
+        case _ => "s: "
       }
     }
 
     private def visitList[A](xs: List[Tree]): String = {
-      formatList(xs.map(_.visit))
+      formatList(", ")(xs.map(_.visit))
+    }
+
+    private def visitListNewLines[A](xs: List[Tree]): String = {
+      formatList(";")(xs.map(_.visit))
     }
 
     private def visitListOptional(xs: List[Tree], formatString: String => String = identity): String = {
@@ -70,6 +82,7 @@ object Main extends App {
     }
 
     def visit: String = visitList(self)
+    def visitNewLines: String = visitListNewLines(self)
     def visitFormatNonEmpty(f: String => String): String = visitListOptional(self, f)
   }
 
@@ -104,6 +117,9 @@ object Main extends App {
     }
   }
 
+  def visitParamss(xss: List[List[Term.Param]]) = {
+    xss.flatten.visit
+  }
 
   def visitTree(tree: Tree): String = {
     tree match {
@@ -116,7 +132,10 @@ object Main extends App {
       }
 
       case typeApply: Type.Apply => {
-        typeApply.args.visitFormatNonEmpty(x => f"args $x")
+        val tpe = typeApply.tpe.visit
+        val args = typeApply.args.visit
+
+        s"$tpe of $args"
       }
 
       case defnObject: Defn.Object => {
@@ -124,7 +143,7 @@ object Main extends App {
         val name = defnObject.name.visit
         val templ = defnObject.templ.visit
 
-        f"$mods object $name has $templ"
+        f"$mods object $name $templ"
       }
 
       case termName: Term.Name => {
@@ -135,7 +154,9 @@ object Main extends App {
         val early = template.early.visit
         val inits = template.inits.visit
         val self = template.self.visit
-        val stats = template.stats.visit
+        val stats = template.stats.visitFormatNonEmpty { x =>
+          f"has ${template.stats.length} declaration${template.stats.suffix} $x"
+        }
 
         s"$early $inits $self $stats"
       }
@@ -162,8 +183,8 @@ object Main extends App {
       case typeParam: Type.Param => {
         val name = typeParam.name.visit
         val mods = typeParam.mods.visit
-        val cbounds = typeParam.cbounds.visit
-        val vbounds = typeParam.vbounds.visit
+        val cbounds = typeParam.cbounds.visitFormatNonEmpty(x => f"bounded by $x")
+        val vbounds = typeParam.vbounds.visitFormatNonEmpty(x => f"vbounds $x")
         val tbounds = typeParam.tbounds.visit
 
         f"$mods $name $cbounds $vbounds $tbounds"
@@ -195,7 +216,69 @@ object Main extends App {
         val name = ctorPrimary.name.visit
         val paramss = ctorPrimary.paramss
 
-        s"$mods $name"
+        s"$mods $name contains ${visitParamss(paramss)}"
+      }
+
+      case defnDef: Defn.Def => {
+        val body = defnDef.body.visit
+        val decltpe = defnDef.decltpe.map(x => f"with return type ${x.visit}").getOrElse("")
+        val mods = defnDef.mods.visit
+        val name = defnDef.name.visit
+        val tparams = defnDef.tparams.visit
+        val paramss = defnDef.paramss
+
+        f"\n$mods definition $name with $tparams $decltpe \n $body"
+      }
+
+      case defnVal: Defn.Val => {
+        val mods = defnVal.mods.visit
+        val rhs = defnVal.rhs.visit
+        val pats = defnVal.pats.visit
+        val decltpe = defnVal.decltpe.map(x => f"with return type ${x.visit}").getOrElse("")
+
+        f"$mods $pats $decltpe with $rhs"
+      }
+
+      case termBlock: Term.Block => {
+        termBlock.stats.visitNewLines
+      }
+
+      case litInt: Lit.Int => {
+        f"value ${litInt.value}"
+      }
+
+      case patVar: Pat.Var => {
+        val name = patVar.name.visit.quote
+
+        f"$name"
+      }
+
+      case init: Init => {
+        val name = init.name.visit
+        val tpe = init.tpe.visit
+        val argss = init.argss
+
+        f"$name extending $tpe"
+      }
+
+      case self: Self => {
+        val name = self.name.visit
+        val decltpe = self.decltpe.map(x => f"with return type ${x.visit}").getOrElse("")
+
+        s"$name $decltpe"
+      }
+
+      case termParam: Term.Param => {
+        val name = termParam.name.visit
+        val decltpe = termParam.decltpe.map(x => f"${x.visit}").getOrElse("")
+        val default = termParam.default.map(x => f"with default value ${x.visit}").getOrElse("")
+        val mods = termParam.mods.visit
+
+        f"$mods $name $decltpe $default"
+      }
+
+      case nameAnonymous: Name.Anonymous => {
+        ""
       }
 
 

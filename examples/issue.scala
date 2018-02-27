@@ -9,7 +9,7 @@ object Main {
     val a = 5
     // val a with value 5 
     // val a
-	a
+    a
   }
 }
 
