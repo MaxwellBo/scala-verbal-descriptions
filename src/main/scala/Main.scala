@@ -12,12 +12,15 @@ final case class Location(
   character: Int
 ) {
   def lineStart: Location = this.copy(character = 0)
+  def toRange(input: Input): Position.Range = Position.Range(input, ???, ???)
 }
 
 final class LocationRange(
   from: Location,
   to: Location
-)
+) {
+  def toRange(input: Input): Position.Range = Position.Range(input, ???, ???)
+}
 
 object Mode extends Enumeration {
    val Summarise  = Value("summarise")
