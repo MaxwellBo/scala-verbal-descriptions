@@ -224,9 +224,9 @@ object Main extends App {
         val mods = defnDef.mods.visit
         val name = defnDef.name.visit
         val tparams = defnDef.tparams.visit
-        val paramss = defnDef.paramss
+        val paramss = defnDef.paramss.flatten.visit
 
-        f"\n$mods definition $name with $tparams $decltpe \n $body"
+        f"\n$mods definition $name with $tparams and params $paramss $decltpe $body"
       }
 
       case defnVal: Defn.Val => {
