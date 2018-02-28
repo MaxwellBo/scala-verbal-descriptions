@@ -1,5 +1,5 @@
-name := "accessible-scala"
-version := "1.0"
+name := "scala-verbal-descriptions"
+version := "0.1.0"
 organization := "Maxwell Bo"
 
 scalaVersion := "2.12.4"
