@@ -2,6 +2,9 @@ import scala.meta._
 import java.io.File
 import scopt.OptionParser
 import scala.io.{Source => FileSource}
+import syntax.list._
+import syntax.option._
+import syntax.string._
 
 object Location {
   val START_OF_FILE = Location(0, 0)
@@ -23,14 +26,14 @@ final class LocationRange(
 }
 
 object Mode extends Enumeration {
-  val Summarise  = Value("summarise")
-  val Describe   = Value("describe")
-  val Breadcrumb = Value("breadcrumb")
+  val Summarise: Mode.Value = Value("summarise")
+  val Describe: Mode.Value = Value("describe")
+  val Breadcrumb: Mode.Value= Value("breadcrumb")
 } 
 
 object Preference extends Enumeration {
-  val Symbols = Value("symbols")
-  val Types   = Value("types")
+  val Symbols: Preference.Value = Value("symbols")
+  val Types: Preference.Value = Value("types")
 } 
 
 final case class Config(
@@ -43,50 +46,12 @@ final case class Config(
 
 object Main extends App {
 
-  implicit class StringOps(self: String) {
-    def quote = f"\'$self\'"
-  }
-
-  implicit class TreeOps(self: Tree) {
+  implicit class TreeExtensions(self: Tree) {
     def visit: String = visitTree(self)
   }
 
-  implicit class ListOps(self: List[Tree]) {
-    private def formatList[A](sep: String)(xs: List[A]): String = {
-      if (xs.length <= 1) {
-        xs.mkString(sep) // empty lists are going to produce empty strings
-      } else {
-        xs.init.mkString(sep) + sep + " and " + xs.last // safe
-      }
-    }
-
-    def suffix: String = {
-      self.length match {
-        case 0 => "s"
-        case 1 => ": "
-        case _ => "s: "
-      }
-    }
-
-    private def visitList[A](xs: List[Tree]): String = {
-      formatList(", ")(xs.map(_.visit))
-    }
-
-    private def visitListNewLines[A](xs: List[Tree]): String = {
-      formatList(";")(xs.map(_.visit))
-    }
-
-    private def visitListOptional(xs: List[Tree], formatString: String => String = identity): String = {
-      if (xs.isEmpty) {
-        ""
-      } else {
-        formatString(visitList(xs))
-      }
-    }
-
-    def visit: String = visitList(self)
-    def visitNewLines: String = visitListNewLines(self)
-    def visitFormatNonEmpty(f: String => String): String = visitListOptional(self, f)
+  implicit class TreeListExtensions(self: List[Tree]) {
+    def visit: List[String] = self.map(_.visit)
   }
 
   // For development
@@ -120,6 +85,12 @@ object Main extends App {
     }
   }
 
+  def visitMods(mods: List[Mod]): Option[String] = mods.visit.spaces
+
+  def visitTparams(tparams: List[Type.Param]): Option[String] = {
+    tparams.visit.commas.prefix("of")
+  }
+
   def visitTree(tree: Tree): String = {
     // matching the order as defined by package scala.meta.Trees
     
@@ -128,10 +99,10 @@ object Main extends App {
       // @branch trait Name extends Ref { def value: String }
 
       // @ast class Anonymous() extends Name
-      case nameAnonymous: Name.Anonymous => "TODO"
+      case nameAnonymous: Name.Anonymous => "higher"
 
       // @ast class Indeterminate(value: Predef.String @nonEmpty) extends Name
-      case nameIndeterminate: Name.Indeterminate => "TODO"
+      case nameIndeterminate: Name.Indeterminate => "INDETERMINATE"
 
       // ################################################################### //
       // @branch trait Lit extends Term with Pat with Type { def value: Any }
@@ -161,10 +132,9 @@ object Main extends App {
       case litString: Lit.String => f"string {litString.value}"
 
       // @ast class Symbol(value: scala.Symbol) extends Lit
-      case litSymbol: Lit.Symbol => "TODO"
+      case litSymbol: Lit.Symbol => litSymbol.toString()
 
       // ################################################################### //
-        
       // @branch trait Term extends Stat
         
       // @ast class This(qual: scala.meta.Name) extends Term.Ref
@@ -276,8 +246,8 @@ object Main extends App {
       // @ast class Block(stats: List[Stat]) extends Term {
       //   checkFields(stats.forall(_.isBlockStat))
       // }
-	  case termBlock: Term.Block => {
-        termBlock.stats.visitNewLines
+      case termBlock: Term.Block => {
+        termBlock.stats.visit.lines.getOrElse("")
       }
 
       // @ast class If(cond: Term, thenp: Term, elsep: Term) extends Term
@@ -379,12 +349,12 @@ object Main extends App {
 
       // @ast class Param(mods: List[Mod], name: meta.Name, decltpe: Option[Type], default: Option[Term]) extends Member
       case termParam: Term.Param => {
+        val mods = termParam.mods.visit.spaces
         val name = termParam.name.visit
-        val decltpe = termParam.decltpe.map(x => f"${x.visit}").getOrElse("")
-        val default = termParam.default.map(x => f"with default value ${x.visit}").getOrElse("")
-        val mods = termParam.mods.visit
+        val decltpe = termParam.decltpe.map(_.visit)
+        val default = termParam.default.map(_.visit).prefix("with default value")
 
-        f"$mods $name $decltpe $default"
+        List(mods, Some(name) , decltpe, default).somes.spaces.getOrElse("")
       }
 
       // ################################################################### //
@@ -423,9 +393,9 @@ object Main extends App {
       // @ast class Apply(tpe: Type, args: List[Type] @nonEmpty) extends Type
       case typeApply: Type.Apply => {
         val tpe = typeApply.tpe.visit
-        val args = typeApply.args.visit
+        val args = typeApply.args.visit.commas.prefix("of")
 
-        s"$tpe of $args"
+        List(Some(tpe), args).somes.spaces.getOrElse("")
       }
 
       // @ast class ApplyInfix(lhs: Type, op: Name, rhs: Type) extends Type
@@ -531,10 +501,10 @@ object Main extends App {
 
       // @ast class Bounds(lo: Option[Type], hi: Option[Type]) extends Tree
       case typeBounds: Type.Bounds => {
-        val hi = typeBounds.hi.map(x => f"upper bound ${x.visit}").getOrElse("")
-        val lo = typeBounds.hi.map(x => f"lower bound ${x.visit}").getOrElse("")
+        val lo = typeBounds.hi.map(_.visit).prefix("lower bound")
+        val hi = typeBounds.hi.map(_.visit).prefix("upper bound")
 
-        f"$hi $lo"
+        List(lo, hi).somes.commas.getOrElse("")
       }
 
       // @ast class ByName(tpe: Type) extends Type {
@@ -572,13 +542,18 @@ object Main extends App {
       //                 vbounds: List[Type],
       //                 cbounds: List[Type]) extends Member
       case typeParam: Type.Param => {
+        val mods = typeParam.mods.visit.spaces
         val name = typeParam.name.visit
-        val mods = typeParam.mods.visit
-        val cbounds = typeParam.cbounds.visitFormatNonEmpty(x => f"bounded by $x")
-        val vbounds = typeParam.vbounds.visitFormatNonEmpty(x => f"vbounds $x")
         val tbounds = typeParam.tbounds.visit
+        val vbounds = typeParam.vbounds.commas.prefix("vbounds")
+        val cbounds = typeParam.cbounds.commas.prefix("bounded by")
 
-        f"$mods $name $cbounds $vbounds $tbounds"
+        // NEED TBOUNDS
+
+        List(
+          List(mods, Some(name)).somes.spaces,
+          List(vbounds, cbounds).somes.commas
+        ).somes.spaces.getOrElse("")
       }
 
       // ################################################################### //
@@ -759,38 +734,44 @@ object Main extends App {
       //                decltpe: Option[scala.meta.Type],
       //                body: Term) extends Defn with Member.Term
       case defnDef: Defn.Def => {
+        val mods = visitMods(defnDef.mods)
+        val name = defnDef.name.visit
+        val tparams = visitTparams(defnDef.tparams)
         val body = defnDef.body.visit
         val decltpe = defnDef.decltpe.map(x => f"with return type ${x.visit}").getOrElse("")
-        val mods = defnDef.mods.visit
-        val name = defnDef.name.visit
-        val tparams = defnDef.tparams.visit
         val paramss = defnDef.paramss.flatten.visit
 
         f"\n$mods definition $name with $tparams and params $paramss $decltpe $body"
       }
+
       // @ast class Macro(mods: List[Mod],
       //                  name: Term.Name,
       //                  tparams: List[scala.meta.Type.Param],
       //                  paramss: List[List[Term.Param]],
       //                  decltpe: Option[scala.meta.Type],
       //                  body: Term) extends Defn with Member.Term
-    case defnMacro: Defn.Macro => {
-      // TODO: Children
+      case defnMacro: Defn.Macro => {
+        // TODO: Children
 
-      "Macro"
-    }
+        "Macro"
+      }
 
       // @ast class Type(mods: List[Mod],
       //                 name: scala.meta.Type.Name,
       //                 tparams: List[scala.meta.Type.Param],
       //                 body: scala.meta.Type) extends Defn with Member.Type
       case defnType: Defn.Type => {
+        val mods = visitMods(defnType.mods)
         val name = defnType.name.visit
+        val tparams = visitTparams(defnType.tparams)
         val body = defnType.body.visit
-        val tparams = defnType.tparams.visit
-        val mods = defnType.mods.visit
 
-        f"$mods type alias $name type $tparams equal to $body"
+        List(
+          mods,
+          Some(name).prefix("type alias"),
+          tparams,
+          Some(body).prefix("equal to")
+        ).somes.spaces.getOrElse("")
       }
 
       // @ast class Class(mods: List[Mod],
@@ -799,42 +780,56 @@ object Main extends App {
       //                  ctor: Ctor.Primary,
       //                  templ: Template) extends Defn with Member.Type
       case defnClass: Defn.Class => {
-        val ctor = defnClass.ctor.visit
-        val mods = defnClass.mods.visit
-        val templ = defnClass.templ.visit
+        val mods = visitMods(defnClass.mods)
         val name = defnClass.name.visit
-        val tparams = defnClass.tparams.visit
+        val tparams = visitTparams(defnClass.tparams)
+        val ctor = defnClass.ctor.visit
+        val templ = defnClass.templ.visit
+
+        List(
+          mods,
+          Some(name).prefix("class"),
+          tparams,
+          Some(ctor),
+          Some(templ)
+        ).somes.spaces.getOrElse("")
 
         f"$mods class $name $templ $ctor"
       }
+
       // @ast class Trait(mods: List[Mod],
       //                  name: scala.meta.Type.Name,
       //                  tparams: List[scala.meta.Type.Param],
       //                  ctor: Ctor.Primary,
-      //                  templ: Template) extends Defn with Member.Type {
-      //   checkFields(templ.is[Template.Quasi] || templ.stats.forall(!_.is[Ctor]))
-      // }
+      //                  templ: Template) extends Defn with Member.Type
       case defnTrait: Defn.Trait => {
+        val mods = visitMods(defnTrait.mods)
         val name = defnTrait.name.visit
-        val tparams = defnTrait.tparams.visitFormatNonEmpty(x => f"has type params $x")
-        val mods = defnTrait.mods.visit
+        val tparams = visitTparams(defnTrait.tparams)
         val ctor = defnTrait.ctor.visit
-        val template = defnTrait.templ.visit
+        val templ = defnTrait.templ.visit
 
-        f"$mods trait $name $tparams $template $ctor"
+        List(
+          mods,
+          Some(name).prefix("trait"),
+          tparams,
+          Some(templ)
+        ).somes.spaces.getOrElse("")
       }
 
       // @ast class Object(mods: List[Mod],
       //                   name: Term.Name,
-      //                   templ: Template) extends Defn with Member.Term {
-      //   checkFields(templ.is[Template.Quasi] || templ.stats.forall(!_.is[Ctor]))
-      // }
+      //                   templ: Template) extends Defn with Member.Term
       case defnObject: Defn.Object => {
-        val mods = defnObject.mods.visit
+        val mods = visitMods(defnObject.mods)
         val name = defnObject.name.visit
         val templ = defnObject.templ.visit
 
-        f"$mods object $name $templ"
+        List(
+          mods,
+          Some(name).prefix("object"),
+          Some(templ)
+        ).somes.spaces.getOrElse("")
       }
 
       // ################################################################### //
@@ -854,8 +849,7 @@ object Main extends App {
       }
 
       // @ast class Object(mods: List[Mod], name: Term.Name, templ: Template)
-      //     extends Member.Term with Stat {
-      //   checkFields(templ.is[Template.Quasi] || templ.stats.forall(!_.is[Ctor]))
+      //     extends Member.Term with Stat
       case pkgObject: Pkg.Object => {
         // TODO: Children
 
@@ -870,11 +864,15 @@ object Main extends App {
       //              name: Name,
       //              paramss: List[List[Term.Param]]) extends Ctor
       case ctorPrimary: Ctor.Primary => {
-        val mods = ctorPrimary.mods.visit
+        val mods = visitMods(ctorPrimary.mods)
         val name = ctorPrimary.name.visit
-        val paramss = ctorPrimary.paramss.flatten.visitFormatNonEmpty(x => f"contains $x")
+        val paramss = ctorPrimary.paramss.flatten.commas.prefix("containing")
 
-        s"$mods $name $paramss"
+        List(
+          mods,
+          Some(name).prefix("object"),
+          paramss
+        ).somes.spaces.getOrElse("")
       }
 
       // @ast class Secondary(mods: List[Mod],
@@ -918,14 +916,17 @@ object Main extends App {
       //   checkFields(stats.forall(_.isTemplateStat))
       // }
       case template: Template => {
-        val early = template.early.visit
-        val inits = template.inits.visit
+        val early = template.early.visit.spaces
+        val inits = template.inits.visit.spaces
         val self = template.self.visit
-        val stats = template.stats.visitFormatNonEmpty { x =>
-          f"has ${template.stats.length} declaration${template.stats.suffix} $x"
-        }
+        val stats = template.stats.visit.count("declaration").prefix("has")
 
-        s"$early $inits $self $stats"
+        List(
+          early,
+          inits,
+          Some(self),
+          stats
+        ).somes.spaces.getOrElse("")
       }
 
       // ################################################################### //

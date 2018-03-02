@@ -8,7 +8,7 @@ class MainSpec extends WordSpec with Matchers {
     "parse 'ErrorsOr[A]' Defn.Type" in {
       val errorsOr: Defn.Type = q"type ErrorsOr[A] = ValidatedNel[String, A]"
 
-      val description = "type alias ErrorsOr type A equal to ValidatedNel of String and type A"
+      val description = "type alias ErrorsOr of A equal to ValidatedNel of String and A"
       val summary = "alias ErrorsOr A"
 
       Main.visitTree(errorsOr) shouldEqual description
